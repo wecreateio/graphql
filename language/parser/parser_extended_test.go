@@ -3,6 +3,7 @@ package parser
 import (
 	"testing"
 
+	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/source"
 )
 
@@ -802,12 +803,16 @@ func TestParse_InterfaceTypeMissingName(t *testing.T) {
 }
 
 func TestParse_NullValue(t *testing.T) {
-	_, err := Parse(ParseParams{
+	doc, err := Parse(ParseParams{
 		Source:  `{ field(arg: null) }`,
 		Options: ParseOptions{NoLocation: true, NoSource: true},
 	})
-	if err == nil {
-		t.Fatal("expected an error for null value")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	field := doc.Definitions[0].(*ast.OperationDefinition).SelectionSet.Selections[0].(*ast.Field)
+	if _, ok := field.Arguments[0].Value.(*ast.NullValue); !ok {
+		t.Fatalf("expected *ast.NullValue, got %T", field.Arguments[0].Value)
 	}
 }
 

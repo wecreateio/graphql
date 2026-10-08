@@ -1760,12 +1760,7 @@ func isValidLiteralValue(ttype Input, valueAST ast.Value) (bool, []string) {
 		if valueAST, ok := valueAST.(*ast.ListValue); ok {
 			messagesReduce := []string{}
 			for idx, value := range valueAST.Values {
-				var messages []string
-				if value.GetKind() == kinds.NullValue {
-					messages = []string{"Unexpected null literal."}
-				} else {
-					_, messages = isValidLiteralValue(itemType, value)
-				}
+				_, messages := isValidLiteralValue(itemType, value)
 				for _, message := range messages {
 					messagesReduce = append(messagesReduce, fmt.Sprintf(`In element #%v: %v`, idx+1, message))
 				}
