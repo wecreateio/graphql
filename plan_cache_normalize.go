@@ -76,8 +76,8 @@ func normalizeDocument(schema *Schema, doc *ast.Document, operationName string) 
 	}
 
 	ctx := &normCtx{
-		schema:    schema,
-		synthArgs: map[string]interface{}{},
+		schema:     schema,
+		synthArgs:  map[string]interface{}{},
 		newVarDefs: nil,
 	}
 
@@ -291,6 +291,8 @@ func (w *fingerprintWriter) writeValue(v ast.Value) {
 		} else {
 			w.writeByte('0')
 		}
+	case *ast.NullValue:
+		w.writeByte('N')
 	case *ast.EnumValue:
 		w.writeByte('e')
 		w.writeString(n.Value)
@@ -408,7 +410,8 @@ func (c *normCtx) tryExtract(value ast.Value, expected Input) (ast.Value, bool) 
 	if value == nil {
 		return value, false
 	}
-	if _, isVar := value.(*ast.Variable); isVar {
+	switch value.(type) {
+	case *ast.Variable, *ast.NullValue:
 		return value, false
 	}
 	if valueHasVariables(value) {

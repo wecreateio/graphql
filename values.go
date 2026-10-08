@@ -15,7 +15,7 @@ import (
 )
 
 // Used to detect the difference between a "null" literal and not present
-type nullValue struct {}
+type nullValue struct{}
 
 // Prepares an object map of variableValues of the correct type based on the
 // provided variable definitions and arbitrary input. If the input cannot be
@@ -33,7 +33,7 @@ func getVariableValues(
 		if varValue, err := getVariableValue(schema, defAST, getValueOrNull(inputs, varName)); err != nil {
 			return values, err
 		} else {
-			values[varName] = varValue
+			addValueOrNull(values, varName, varValue)
 		}
 	}
 	return values, nil
@@ -56,6 +56,14 @@ func addValueOrNull(values map[string]interface{}, name string, value interface{
 	} else if !isNullish(value) { // Not present
 		values[name] = value
 	}
+}
+
+// nullToNil converts the internal null marker into a plain nil, e.g. for list elements.
+func nullToNil(value interface{}) interface{} {
+	if _, ok := value.(nullValue); ok {
+		return nil
+	}
+	return value
 }
 
 // Prepares an object map of argument values given a list of argument
@@ -117,7 +125,7 @@ func getVariableValue(schema Schema, definitionAST *ast.VariableDefinition, inpu
 		}
 		return coerceValue(ttype, input), nil
 	}
-	if _, ok := input.(nullValue); ok ||  isNullish(input) {
+	if _, ok := input.(nullValue); ok || isNullish(input) {
 		return "", gqlerrors.NewError(
 			fmt.Sprintf(`Variable "$%v" of required type `+
 				`"%v" was not provided.`, variable.Name.Value, printer.Print(definitionAST.Type)),
@@ -166,11 +174,11 @@ func coerceValue(ttype Input, value interface{}) interface{} {
 		if valType.Kind() == reflect.Slice {
 			for i := 0; i < valType.Len(); i++ {
 				val := valType.Index(i).Interface()
-				values = append(values, coerceValue(ttype.OfType, val))
+				values = append(values, nullToNil(coerceValue(ttype.OfType, val)))
 			}
 			return values
 		}
-		return append(values, coerceValue(ttype.OfType, value))
+		return append(values, nullToNil(coerceValue(ttype.OfType, value)))
 	case *InputObject:
 		var obj = map[string]interface{}{}
 		valueMap, _ := value.(map[string]interface{})
@@ -233,7 +241,7 @@ func typeFromAST(schema Schema, inputTypeAST ast.Type) (Type, error) {
 // accepted for that type. This is primarily useful for validating the
 // runtime values of query variables.
 func isValidInputValue(value interface{}, ttype Input) (bool, []string) {
-	if _, ok := value.(nullValue); ok || isNullish(value)  {
+	if _, ok := value.(nullValue); ok || isNullish(value) {
 		if ttype, ok := ttype.(*NonNull); ok {
 			if ttype.OfType.Name() != "" {
 				return false, []string{fmt.Sprintf(`Expected "%v!", found null.`, ttype.OfType.Name())}
@@ -254,12 +262,7 @@ func isValidInputValue(value interface{}, ttype Input) (bool, []string) {
 			messagesReduce := []string{}
 			for i := 0; i < valType.Len(); i++ {
 				val := valType.Index(i).Interface()
-				var messages []string
-				if _, ok := val.(nullValue); ok {
-					messages = []string{"Unexpected null value."}
-				} else {
-					_, messages = isValidInputValue(val, ttype.OfType)
-				}
+				_, messages := isValidInputValue(val, ttype.OfType)
 				for _, message := range messages {
 					messagesReduce = append(messagesReduce, fmt.Sprintf(`In element #%v: %v`, i+1, message))
 				}
@@ -389,7 +392,7 @@ func valueFromAST(valueAST ast.Value, ttype Input, variables map[string]interfac
 		// Note: we're not doing any checking that this variable is correct. We're
 		// assuming that this query has been validated and the variable usage here
 		// is of the correct type.
-		return variables[valueAST.Name.Value]
+		return getValueOrNull(variables, valueAST.Name.Value)
 	}
 	switch ttype := ttype.(type) {
 	case *NonNull:
@@ -398,11 +401,11 @@ func valueFromAST(valueAST ast.Value, ttype Input, variables map[string]interfac
 		values := []interface{}{}
 		if valueAST, ok := valueAST.(*ast.ListValue); ok {
 			for _, itemAST := range valueAST.Values {
-				values = append(values, valueFromAST(itemAST, ttype.OfType, variables))
+				values = append(values, nullToNil(valueFromAST(itemAST, ttype.OfType, variables)))
 			}
 			return values
 		}
-		return append(values, valueFromAST(valueAST, ttype.OfType, variables))
+		return append(values, nullToNil(valueFromAST(valueAST, ttype.OfType, variables)))
 	case *InputObject:
 		var (
 			ok bool

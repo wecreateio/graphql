@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/lexer"
 	"github.com/graphql-go/graphql/language/source"
 )
@@ -1146,12 +1147,15 @@ func TestParse_IntegrationNoLocation(t *testing.T) {
 }
 
 func TestParse_ValueNullInput(t *testing.T) {
-	_, err := ParseValue(ParseParams{
+	value, err := ParseValue(ParseParams{
 		Source:  `null`,
 		Options: ParseOptions{NoLocation: true, NoSource: true},
 	})
-	if err == nil {
-		t.Fatal("expected error for null value")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := value.(*ast.NullValue); !ok {
+		t.Fatalf("expected *ast.NullValue, got %T", value)
 	}
 }
 
