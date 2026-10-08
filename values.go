@@ -58,6 +58,46 @@ func addValueOrNull(values map[string]interface{}, name string, value interface{
 	}
 }
 
+// maxPrintDepth bounds the nesting of input values formatted into error messages,
+// as formatting arbitrarily deep values may exhaust the stack.
+const maxPrintDepth = 100
+
+const tooDeeplyNested = "<too deeply nested>"
+
+// exceedsDepth reports whether value nests lists or maps deeper than depth levels.
+func exceedsDepth(value interface{}, depth int) bool {
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array:
+		if depth == 0 {
+			return true
+		}
+		for i := 0; i < v.Len(); i++ {
+			if exceedsDepth(v.Index(i).Interface(), depth-1) {
+				return true
+			}
+		}
+	case reflect.Map:
+		if depth == 0 {
+			return true
+		}
+		for iter := v.MapRange(); iter.Next(); {
+			if exceedsDepth(iter.Value().Interface(), depth-1) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// printInput formats an input value for error messages.
+func printInput(value interface{}) string {
+	if exceedsDepth(value, maxPrintDepth) {
+		return tooDeeplyNested
+	}
+	return fmt.Sprintf("%v", value)
+}
+
 // nullToNil converts the internal null marker into a plain nil, e.g. for list elements.
 func nullToNil(value interface{}) interface{} {
 	if _, ok := value.(nullValue); ok {
@@ -137,11 +177,12 @@ func getVariableValue(schema Schema, definitionAST *ast.VariableDefinition, inpu
 		)
 	}
 	// convert input interface into string for error message
-	bts, _ := json.Marshal(input)
-	var (
+	inputStr := tooDeeplyNested
+	if !exceedsDepth(input, maxPrintDepth) {
+		bts, _ := json.Marshal(input)
 		inputStr = string(bts)
-		msg      string
-	)
+	}
+	var msg string
 	if len(messages) > 0 {
 		msg = "\n" + strings.Join(messages, "\n")
 	}
@@ -313,11 +354,11 @@ func isValidInputValue(value interface{}, ttype Input) (bool, []string) {
 		return (len(messagesReduce) == 0), messagesReduce
 	case *Scalar:
 		if parsedVal := ttype.ParseValue(value); isNullish(parsedVal) {
-			return false, []string{fmt.Sprintf(`Expected type "%v", found "%v".`, ttype.Name(), value)}
+			return false, []string{fmt.Sprintf(`Expected type "%v", found "%v".`, ttype.Name(), printInput(value))}
 		}
 	case *Enum:
 		if parsedVal := ttype.ParseValue(value); isNullish(parsedVal) {
-			return false, []string{fmt.Sprintf(`Expected type "%v", found "%v".`, ttype.Name(), value)}
+			return false, []string{fmt.Sprintf(`Expected type "%v", found "%v".`, ttype.Name(), printInput(value))}
 		}
 	}
 

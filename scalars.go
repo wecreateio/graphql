@@ -1,6 +1,7 @@
 package graphql
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -314,6 +315,54 @@ func coerceString(value interface{}) interface{} {
 	return fmt.Sprintf("%v", value)
 }
 
+// parseString accepts string input values only, as input coercion must not stringify other types.
+func parseString(value interface{}) interface{} {
+	switch value := value.(type) {
+	case string:
+		return value
+	case *string:
+		if value == nil {
+			return nil
+		}
+		return *value
+	}
+	return nil
+}
+
+// parseID accepts string and integer input values, returning them as string.
+func parseID(value interface{}) interface{} {
+	switch value := value.(type) {
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%d", value)
+	case float64:
+		// JSON numbers are decoded as float64
+		if value == math.Trunc(value) && !math.IsInf(value, 0) {
+			return strconv.FormatFloat(value, 'f', -1, 64)
+		}
+		return nil
+	case json.Number:
+		if _, err := value.Int64(); err == nil {
+			return value.String()
+		}
+		return nil
+	}
+	return parseString(value)
+}
+
+// parseBool accepts boolean input values only.
+func parseBool(value interface{}) interface{} {
+	switch value := value.(type) {
+	case bool:
+		return value
+	case *bool:
+		if value == nil {
+			return nil
+		}
+		return *value
+	}
+	return nil
+}
+
 // String is the GraphQL string type definition
 var String = NewScalar(ScalarConfig{
 	Name: "String",
@@ -321,7 +370,7 @@ var String = NewScalar(ScalarConfig{
 		"character sequences. The String type is most often used by GraphQL to " +
 		"represent free-form human-readable text.",
 	Serialize:  coerceString,
-	ParseValue: coerceString,
+	ParseValue: parseString,
 	ParseLiteral: func(valueAST ast.Value) interface{} {
 		switch valueAST := valueAST.(type) {
 		case *ast.StringValue:
@@ -480,7 +529,7 @@ var Boolean = NewScalar(ScalarConfig{
 	Name:        "Boolean",
 	Description: "The `Boolean` scalar type represents `true` or `false`.",
 	Serialize:   coerceBool,
-	ParseValue:  coerceBool,
+	ParseValue:  parseBool,
 	ParseLiteral: func(valueAST ast.Value) interface{} {
 		switch valueAST := valueAST.(type) {
 		case *ast.BooleanValue:
@@ -499,7 +548,7 @@ var ID = NewScalar(ScalarConfig{
 		"When expected as an input type, any string (such as `\"4\"`) or integer " +
 		"(such as `4`) input value will be accepted as an ID.",
 	Serialize:  coerceString,
-	ParseValue: coerceString,
+	ParseValue: parseID,
 	ParseLiteral: func(valueAST ast.Value) interface{} {
 		switch valueAST := valueAST.(type) {
 		case *ast.IntValue:
